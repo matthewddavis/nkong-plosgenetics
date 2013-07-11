@@ -41,7 +41,7 @@ def gunzipFastqs(sample_dir, read_type='single', species='mm10', out_prefix = 'F
     
     fastq_gzs = glob(sample_dir + '/' + '*.gz')
 
-    samplename = fastq_gzs[0].split('/')[-1].split(single_substr)[0] 
+    sample_name = fastq_gzs[0].split('/')[-1].split(single_substr)[0] 
     
     single_fq_gzs, paired_fq_gzs = [], []
     for fastq_gz in fastq_gzs:

@@ -28,6 +28,15 @@ def openLogger(log_fn, log_name):
 
     return logger
 
+def parseOptions():
+    from optparse import OptionParser
+    parser = OptionParser()
+    parser.add_option("--topDataDir", dest="top_data_dir",
+                      help="this is the top-level dir containing subdirs of sequencing reads", metavar="DIR")
+
+    (options, args) = parser.parse_args()
+    return (options, args)
+
 def trimFastq(fastq_fn, adapter_seq):
     '''
     Trims given adapter sequences out of the fastq files.
@@ -498,22 +507,30 @@ def runMacs14(treat_fn, species='mm10', control_fn='', macs_bin='/g/software/bin
 class SeqSample(object):
     '''
     '''
-    def __init__(self, sample_dir, log_name='pipeline'):
+    def __init__(self, sample_dir, log_name='pipeline', cpu_cores=1):
         self.logger = logging.getLogger('pipeline')
         
         self.attrs = {}
-        self.attrs['sample_dir'] = sample_dir
+        self.sample_dir = sample_dir
+        self.cpu_cores = cpu_cores
         self.loadSampleAttrs()
+
 
     def loadSampleAttrs(self):
         '''
         Each sample has a sample_info file in the sample_dir.
         Each line of this file is a semi-colon separated attr
-        key:value pair with whitespace allowed.
+        key:value pair with whitespace allowed in the values.
+
+        E.g.
+        sample_id; Sample_NKRT1
+        common_name; Mef2 ChIP-exo
+        read_type; 50SE
+        adapter_seq; GATCGGAAGAGCACACGTCTGAACTCCAGTCAC
 
         This function parses these attrs into the SeqSample object.
         '''
-        sample_info_fn = self.attrs['sample_dir'] + '/' + 'sample_info'
+        sample_info_fn = self.sample_dir + '/' + 'sample_info'
         for line in open(sample_info_fn):
             if line.startswith('#'):
                 continue
@@ -521,29 +538,121 @@ class SeqSample(object):
             line = [i.strip() for i in line]
             self.attrs[line[0]] = line[1]
 
-        logger.info('Sample loaded:')
+        self.logger.info('Sample loaded:')
         for attr in self.attrs:
-            logger.info('\t%s : %s' % (attr, self.attrs[attr]))
+            self.logger.info('\t%s : %s' % (attr, self.attrs[attr]))
 
+    def gunzipFastqs(self, single_str='R1', paired_str='R2'):
+        '''
+        Unzips and concatenates the FASTQ files from an Illumina experiment
+        for downstream analysis.
 
+        The concatenated file is stored in a subdirectory <outdir> of the 
+        sample directory <sampledir>.
+
+        The single_str or paired_str identifies the read file as single or paired end.
+        For VCGSL reads, this is R1 for single and R2 for paired.
+        '''
+        from glob import glob
+        import gzip
+        from datetime import datetime
+        from multiprocessing import Pool
+
+        def _checkForFastq(out_dir):
+            '''
+            Check to see if the uncompressed files already exist from a previous run.
+            '''
+            read_type = self.attrs['read_type']
+            if os.path.isdir(out_dir):
+                out_fns = glob(out_dir + '/' + '*' + '.all.fastq')
+                # there should be at most two all.fastq files, in the case of paired-end reads
+                assert len(out_fns) <= 2
+
+                for out_fn in out_fns:
+                    if 'SE' in read_type:
+                        # check for single-end reads of any length
+                        if single_str in out_fn:
+                            self.logger.warn("An uncompressed single-end fastq file for %s already exist: %s" % (self.attrs['sample_id'], out_fn) )
+                            self.logger.warn("\t...skipping decompression.")
+                            self.single_fastq_fn = out_fn
+                            self.paired_fastq_fn = None
+                            return True
+                    elif 'PE' in read_type:
+                        # these are paired-end reads of any length
+                        if single_str in out_fn:
+                            self.single_fastq_fn = out_fn
+                        elif paired_str in out_fn:
+                            self.paired_fastq_fn = out_fn
+                # make sure both single-end and paired-end were
+                # found, if this is a paired-end sample
+                if self.single_fastq_fn and self.paired_fastq_fn:
+                    self.logger.warn("Uncompressed paired-end fastq files for %s already exist: %s" % (self.attrs['sample_id'], out_fn) )
+                    self.logger.warn("\t...skipping decompression.")
+                    return True
+                else:
+                    return False
+
+        def _sortFastqgzFiles():
+            fastq_gzs = glob(self.sample_dir + '/' + '*.gz')
+            single_fq_gzs, paired_fq_gzs = [], []
+            for fastq_gz in fastq_gzs:
+                if single_str in fastq_gz:
+                    single_fq_gzs.append(fastq_gz)
+                elif paired_str in fastq_gz:
+                    paired_fq_gzs.append(fastq_gz)
+                else:
+                    self.logger.warn("Skipping %s because it doesn't contain a single-end or paired-end FASTQ substring." % (fastq_gz) )
+            if 'SE' in self.attrs['read_type']:
+                assert len(single_fq_gzs) > 0
+            elif 'PE' in self.attrs['read_type']:
+                assert len(single_fq_gzs) > 0
+                assert len(paired_fq_gzs) > 0
+            else:
+                self.logger.error('!!! The read_type is not present or not interpretable in the sample_info file.')
+                self.logger.error('!!! Exiting...')
+                sys.exit()
+            return single_fq_gzs, paired_fq_gzs
+
+        ## Begin top-level function
+        time_stamp = datetime.now().isoformat()
+        out_dir = self.sample_dir + '/fastq_' + time_stamp
+
+        # if the fastq file(s) exist already, return
+        if _checkForFastq(out_dir):
+            return
+
+        single_fq_gzs, paired_fq_gzs = _sortFastqgzFiles()
+
+        if 'SE' in self.attrs['read_type']:
+            self.single_fastq_fn = self.sample_dir + '/' + self.attrs['sample_id'] + '.all.fastq'
+            self.paired_fastq_fn = None
+            self.logger.info("Uncompressing single-end fastq files for %s to %s..." % (self.sample_dir, out_dir))
+            cmd = 'zcat ' + ' '.join(single_fq_gzs) + '> ' + self.single_fastq_fn
+            os.system(cmd)
+        if 'PE' in self.attrs['read_type']:
+            self.single_fastq_fn = self.sample_dir + '/' + self.attrs['sample_id'] + '.single.all.fastq'
+            self.paired_fastq_fn = self.sample_dir + '/' + self.attrs['sample_id'] + '.paired.all.fastq'
+            self.logger.info("Uncompressing single-end fastq files for %s to %s..." % (self.sample_dir, out_dir))
+            cmd = 'zcat ' + ' '.join(single_fq_gzs) + '> ' + self.single_fastq_fn
+            os.system(cmd)
+            self.logger.info("Uncompressing paired-end fastq files for %s to %s..." % (self.sample_dir, out_dir))
+            cmd = 'zcat ' + ' '.join(paired_fq_gzs) + '> ' + self.paired_fastq_fn
+            os.system(cmd)
 
 if __name__ == '__main__':
 
-
     logger = openLogger(log_fn='pipeline.log', log_name='pipeline')
 
-    sample = SeqSample(sample_dir='data/Sample_NKRT1/')
+    (options, extra_args) = parseOptions()
 
-    sys.exit()
-
-
-    sample_dir = sys.argv[1]
-    adapterSE='GATCGGAAGAGCACACGTCTGAACTCCAGTCAC'
+    sample = SeqSample(sample_dir=options.top_data_dir, cpu_cores=20)
 
     # gunzip and concatenate the fq.gz files
     # fqs is a dictionary with the concatenated filename for 
     # single and paired files
-    fqs = gunzipFastqs(sample_dir, read_type='single', species='mm10')
+    sample.gunzipFastqs(single_str='R1', paired_str='R2')
+    sys.exit()
+    
     if fqs:
         # trim the adapter sequences from the reads
         # capture the filenames in the return to pass
