@@ -1,90 +1,11 @@
-#!/usr/bin/python
+#!/g/software/bin/python-2.7
 import sys
 import os
+from readTools import gunzipFastqs
+from littleTools import openNice
 
-def openNice(outfn, permission='U'):
-    '''
-    Just opens a file nicely...
-    '''
-    try:
-        return open(outfn, permission)
-    except IOError:
-        print '!!!!!'
-        print 'Error opening %s' % (outfn)
-        print '!!!!!'
-        return    
 
-def gunzipFastqs(sampledir, readtype, species, outprefix = 'FASTQ', singleSubstr='R1', pairedSubstr='R2'):
-    '''
-    Unzips and concatenates the FASTQ files from an Illumina experiment
-    for downstream analysis.
-
-    Returns a dict of the names of the single and paired end file names for other functions to use.
-
-    The concatenated file is stored in a subdirectory <outdir> of the 
-    sample directory <sampledir>.
-
-    The Substr identifies the read file as single or paired end.
-    '''
-    from glob import glob
-    import gzip 
-    outdir = sampledir + '/' + '_'.join([outprefix, readtype, species])
-
-    print "Uncompressing files for %s to %s..." % (sampledir, outdir)
-    if os.path.isdir(outdir):
-        print "#####"
-        print "Warning:  It looks like the unzipped FASTQ files are already present in %s" % (outdir)
-        print "#####"
-        soutfn = glob(outdir + '/' + '*' + singleSubstr + '.all.fastq')
-        poutfn = glob(outdir + '/' + '*' + pairedSubstr + '.all.fastq')
-        outfns = {}
-        if soutfn:
-            outfns['single'] = soutfn[0]
-        else:
-            return
-        if poutfn:
-            outfns['paired'] = poutfn[0]
-        return outfns
-    else:
-        os.mkdir(outdir)
-    
-    fastqgzs = glob(sampledir + '/' + '*.gz')
-
-    samplename = fastqgzs[0].split('/')[-1].split(singleSubstr)[0] 
-    
-    singlefqgzs, pairedfqgzs = [], []
-    for fastqgz in fastqgzs:
-        if singleSubstr in fastqgz:
-            singlefqgzs.append(fastqgz)
-        elif pairedSubstr in fastqgz:
-            pairedfqgzs.append(pairedSubstr)
-    for fastqgz in fastqgzs:
-        if (fastqgz not in singlefqgzs) and (fastqgz not in pairedfqgzs):
-            print "#####"
-            print "WARNING:  Skipping %s because it doesn't contain a single or paired end FASTQ substring!"            
-            print "#####"
-    
-    outfns = {}
-
-    if len(singlefqgzs) > 0:
-        soutfn = outdir + '/' + samplename + singleSubstr + '.all.fastq'
-        os.system('zcat ' + ' '.join(singlefqgzs) + '> ' + soutfn)
-        outfns['single'] = soutfn
-    if len(pairedfqgzs) > 0:
-        poutfn = outdir + '/' + samplename + pairedSubstr + '.all.fastq'
-        os.system('zcat ' + ' '.join(pairedfqgzs) + '> ' + poutfn)
-        outfns['paired'] = poutfn
-
-    return outfns
-
-def printUsage():
-    '''
-    Print the usage message for the program.
-    '''
-    print "Usage:  python ./pipeline.py <sampledir> <readtype> <species>"
-    sys.exit()
-
-def trimFastq(fastqfn, adapterseq):
+def trimFastq(fastq_fn, adapter_seq):
     '''
     Trims given adapter sequences out of the fastq files.
 
@@ -93,58 +14,57 @@ def trimFastq(fastqfn, adapterseq):
     '''
     import os
 
-    fastqfh = openNice(fastqfn,'r')
-    outfn = fastqfn.split('.')[0] + '.adaptercleaned.fastq'
+    fastqfh = openNice(fastq_fn,'r')
+    outfn = fastq_fn.split('.')[0] + '.adaptercleaned.fastq'
 
-    if os.path.isfile(outfn):
+    if os.path.isfile(out_fn):
         print "#####"
-        print "WARNING:  It looks like the fastq file %s has already been cleaned!" % (fastqfn)
+        print "WARNING:  It looks like the fastq file %s has already been cleaned!" % (fastq_fn)
         print "#####"
-        return outfn
+        return out_fn
 
-    outfh = openNice(outfn, 'w')
-    trimcountsfn = fastqfn.split('.')[0] + '.trimcounts'
-    countsfh = openNice(trimcountsfn, 'w')
+    out_fh = openNice(out_fn, 'w')
+    trimcounts_fn = fastq_fn.split('.')[0] + '.trimcounts'
+    counts_fh = openNice(trimcounts_fn, 'w')
     
-    print "\nRemoving adapter sequences from %s..." % (fastqfn)
+    print "\nRemoving adapter sequences from %s..." % (fastq_fn)
 
     # we want to count and report the number of reads and the 
     # number trimmed
     count = 0
-    trimcount = 0
+    trim_count = 0
     while (True):
         for i in range(4):
-            seqname = fastqfh.readline().strip()
-            if seqname == '': 
-                countsfh.write('Total Reads = %s\n' % (count))
-                countsfh.write('Trimmed Reads = %s\n' % (trimcount))
-                percent = float(trimcount) / count * 100
-                countsfh.write('Percent trimmed = %s\n' % (percent))
+            seq_name = fastq_fh.readline().strip()
+            if seq_name == '': 
+                counts_fh.write('Total Reads = %s\n' % (count))
+                counts_fh.write('Trimmed Reads = %s\n' % (trim_count))
+                percent = float(trim_count) / count * 100
+                counts_fh.write('Percent trimmed = %s\n' % (percent))
 
-                print "\tFrom a total of %s, %s were trimmed (%s percent)." % (count, trimcount, percent)
+                print "\tFrom a total of %s, %s were trimmed (%s percent)." % (count, trim_count, percent)
 
-                fastqfh.close()
-                outfh.close()
-                countsfh.close()
+                fastq_fh.close()
+                out_fh.close()
+                counts_fh.close()
 
-                #print outfn
-                return outfn
+                return out_fn
 
-            read = fastqfh.readline().strip()
-            untrimlen = len(read)
-            read = removeAdapter(read, adapterseq)
-            if len(read) != untrimlen:
-                trimcount += 1
+            read = fastq_fh.readline().strip()
+            untrim_len = len(read)
+            read = removeAdapter(read, adapter_seq)
+            if len(read) != untrim_len:
+                trim_count += 1
             # if the read is entirely composed of adapter, then leave a pair of 'Ns' to
             # preserve paired-end read order.  Two Ns are required for bowtie to handle them.
             if read == '':
                 read = 'NN'
-            comment = fastqfh.readline().strip()
-            qscore = fastqfh.readline().strip()
-            outfh.write(seqname + '\n')
-            outfh.write(read + '\n')
-            outfh.write(comment + '\n')
-            outfh.write(qscore[0:len(read)] + '\n')
+            comment = fastq_fh.readline().strip()
+            qscore = fastq_fh.readline().strip()
+            out_fh.write(seq_name + '\n')
+            out_fh.write(read + '\n')
+            out_fh.write(comment + '\n')
+            out_fh.write(qscore[0:len(read)] + '\n')
             count += 1
         if count % 1e6 == 0:
             print count, read
@@ -375,25 +295,14 @@ def calculateMappedLibrarySize(bamfn):
     
     return size
 
-def makeNormalizedBedGraph(bamfn, species, insertSize=150, scaledLibrarySize=10e7):
+def makeNormalizedBedGraph(bamfn, species='mm10', insertSize=150, scaledLibrarySize=10e7):
     '''
     '''
     import subprocess as SP
     import gzip
 
-    #if bamfn.endswith('.mm10.bam'):
-    chromsizefn = 'mm10.chrom.sizes'
-    species = 'mm10'
-    #elif bamfn.endswith('.dpse.bam'):
-    #    chromsizefn = 'dp3.chrom.sizes'
-    #    species = 'dp3'
-    #elif species == 'dm3':
-    #    chromsizefn = 'dm3.chrom.sizes'
-    #elif species == 'dp3':
-    #    chromsizefn = 'dp3.chrom.sizes'
-    #else:
-    #    print "Error:  invalid species name for %s" % (species)
-    #    return
+    chromsizefn = 'reference/mm10.chrom.sizes'
+
     chromsizes = {}
     with openNice(chromsizefn, 'r') as chromsizefh:
         for line in chromsizefh:
@@ -537,37 +446,56 @@ def cleanupSeqFiles(fqs, bamfn, keepsam = False):
         for samfn in samfns:
             os.remove(samfn)
 
+def runMacs14(treat_fn, species='mm10', control_fn='', macs_bin='/g/software/bin/macs14'):
+    '''                                                                                                                                                                
+    - treatfn should be a processed and sorted bamfn                                                                                                                   
+    - if controlfn is unspecified, MACS14 will use the no input control model                                                                                          
+    '''
+    if species == 'mm10':
+        genome_size = '1.87e9'
+    else:
+        print "Invalid species type %s" % (species)
+        raise Error
+
+    data_name = treat_fn.split('.bam')[0] + '.macs'
+
+    if control_fn:
+        print "\tRunning MACS14 with %s as the treatment and %s as the control..." % (treat_fn, control_fn)
+        args = [macs_bin, '-t', treat_fn, '-c', control_fn, '-n', data_name, '-fBAM', '-g', genome_size]
+    else:
+        print "\tRunning MACS14 with %s as the treatment and no control file..." % (treat_fn)
+        args = [macs_bin, '-t', treat_fn, '-n', data_name, '-fBAM', '-g', genome_size]
+
+    proc = SP.Popen(args, stdout=SP.PIPE, stderr=SP.PIPE)
+    proc.wait()
+    sout, serr = proc.communicate()
+    print sout, serr
+    print '\t...done.'
 
 if __name__ == '__main__':
 
-    if len(sys.argv) != 4:
-        printUsage()
-        
-    sampledir = sys.argv[1]
-    readtype = sys.argv[2]
-    species = sys.argv[3]
+    sample_dir = sys.argv[1]
     adapterSE='GATCGGAAGAGCACACGTCTGAACTCCAGTCAC'
-    adapterPE='ATAGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGTAGATCTCGGTGGTCGCCGTATCATT'
 
     # gunzip and concatenate the fq.gz files
     # fqs is a dictionary with the concatenated filename for 
     # single and paired files
-    fqs = gunzipFastqs(sampledir, readtype, species)
-    if not fqs:
-        print "Exiting..."
-        sys.exit()
-
-    # trim the adapter sequences from the reads
-    # capture the filenames in the return to pass
-    # to the mapping function of your choice
-    trimfqs = {}
-    for fq in fqs:
-        if fq == 'single':
-            trimfqs['single'] = trimFastq(fqs[fq], adapterSE)
-        elif fq == 'paried':
-            trimfqs['paired'] = trimFastq(fqs[fq], adapterPE)
-            
-    bamfns = mapBWA(trimfqs, readtype, species)
+    fqs = gunzipFastqs(sample_dir, read_type='single', species='mm10')
+    if fqs:
+        # trim the adapter sequences from the reads
+        # capture the filenames in the return to pass
+        # to the mapping function of your choice
+        trim_fqs = {}
+        for fq in fqs:
+            if fq == 'single':
+                trimfqs['single'] = trimFastq(fqs[fq], adapterSE)
+            elif fq == 'paried':
+                trimfqs['paired'] = trimFastq(fqs[fq], adapterPE)
+        fqs = trimfqs
+    
+    bamfns = mapBWA(fqs, readtype, species)
     for bamfn in bamfns:
         makeNormalizedBedGraph(bamfn, species, insertSize=350)
         cleanupSeqFiles(fqs, bamfn, keepsam=False)
+
+        runMacs14(treat_fn=bamfn, species='mm10', control_fn='', macs_bin='/g/software/bin/macs14')
