@@ -1,9 +1,32 @@
 #!/g/software/bin/python-2.7
 import sys
+import logging
 import os
 from readTools import gunzipFastqs
 from littleTools import openNice
 
+def openLogger(log_fn, log_name):
+    # clear any previous log file of the same name
+    if os.path.isfile(log_fn):
+        os.remove(log_fn)
+    # log for pipeline
+    logger = logging.getLogger(log_name)
+    logger.setLevel(logging.DEBUG)
+    # log file captures DEBUG and above
+    fh = logging.FileHandler(log_fn)
+    fh.setLevel(logging.DEBUG)
+    # console log is ERROR and above
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.ERROR)
+    # create formatter and add it to the handlers
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    fh.setFormatter(formatter)
+    ch.setFormatter(formatter)
+    # add the handlers to the logger
+    logger.addHandler(fh)
+    logger.addHandler(ch)
+
+    return logger
 
 def trimFastq(fastq_fn, adapter_seq):
     '''
@@ -472,7 +495,47 @@ def runMacs14(treat_fn, species='mm10', control_fn='', macs_bin='/g/software/bin
     print sout, serr
     print '\t...done.'
 
+class SeqSample(object):
+    '''
+    '''
+    def __init__(self, sample_dir, log_name='pipeline'):
+        self.logger = logging.getLogger('pipeline')
+        
+        self.attrs = {}
+        self.attrs['sample_dir'] = sample_dir
+        self.loadSampleAttrs()
+
+    def loadSampleAttrs(self):
+        '''
+        Each sample has a sample_info file in the sample_dir.
+        Each line of this file is a semi-colon separated attr
+        key:value pair with whitespace allowed.
+
+        This function parses these attrs into the SeqSample object.
+        '''
+        sample_info_fn = self.attrs['sample_dir'] + '/' + 'sample_info'
+        for line in open(sample_info_fn):
+            if line.startswith('#'):
+                continue
+            line = line.split(';')
+            line = [i.strip() for i in line]
+            self.attrs[line[0]] = line[1]
+
+        logger.info('Sample loaded:')
+        for attr in self.attrs:
+            logger.info('\t%s : %s' % (attr, self.attrs[attr]))
+
+
+
 if __name__ == '__main__':
+
+
+    logger = openLogger(log_fn='pipeline.log', log_name='pipeline')
+
+    sample = SeqSample(sample_dir='data/Sample_NKRT1/')
+
+    sys.exit()
+
 
     sample_dir = sys.argv[1]
     adapterSE='GATCGGAAGAGCACACGTCTGAACTCCAGTCAC'

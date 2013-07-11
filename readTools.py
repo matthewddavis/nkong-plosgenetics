@@ -3,16 +3,6 @@ import sys
 import os
 from littleTools import openNice
 
-class ChipExoSample():
-    '''
-    '''
-    def __init__(self):
-        pass
-
-
-
-
-
 def gunzipFastqs(sample_dir, read_type='single', species='mm10', out_prefix = 'FASTQ', single_substr='R1', paired_substr='R2'):
     '''
     Unzips and concatenates the FASTQ files from an Illumina experiment
