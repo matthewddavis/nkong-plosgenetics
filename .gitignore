@@ -1,0 +1,10 @@
+*.pyc
+*.gz
+bin/
+data/
+*.log
+reference/
+*.txt
+*.xls
+*.xlsx
+*.gtf
