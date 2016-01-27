@@ -19,7 +19,7 @@ def openLogger():
 
     return logger
 
-def upload_file(dest='/g/furlong1/furlong_servers/furlongweb/PERSO_PAGES/mdavis/', local_server_addr='http://furlonglab.embl.de/xchange/mdavis/', \
+def upload_file(dest='/home/matt/public_html/ucsc/', local_server_addr='http://dounce.icmb.utexas.edu/~matt/ucsc/', \
                 logger=openLogger(), **kwargs):
     '''
     Copies the bed_fn to a temporary file in the http directory,
@@ -97,7 +97,7 @@ def upload_file(dest='/g/furlong1/furlong_servers/furlongweb/PERSO_PAGES/mdavis/
         self.logging.info('...done.')
         local_url = local_server_addr + local_fn
     
-    remote_server_addr = 'http://genome-euro.ucsc.edu/cgi-bin/hgCustom?hgsid='
+    remote_server_addr = 'http://genome.ucsc.edu/cgi-bin/hgCustom?hgsid='
     remote_url = remote_server_addr + args['ucsc_id'] + '&hgct_customText=' + local_url
 
     cmd = "wget --tries=1 --quiet -O /dev/null '" + remote_url + "'"
